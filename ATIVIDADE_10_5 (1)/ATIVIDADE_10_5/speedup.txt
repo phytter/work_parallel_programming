@@ -1,3 +1,0 @@
-Tempo sem cláusula: 5840
-Tempo com cláusula: 4128
-SpeedUp = 1,41

@@ -1,0 +1,15 @@
+{
+  "files.associations": {
+    "heatmap.h": "c",
+    "cmath": "cpp",
+    "functional": "cpp",
+    "array": "c",
+    "deque": "c",
+    "list": "c",
+    "string": "c",
+    "unordered_map": "c",
+    "vector": "c",
+    "string_view": "c",
+    "initializer_list": "c"
+  }
+}
