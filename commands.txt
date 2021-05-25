@@ -1,1 +1,2 @@
 g++ -std=c++17 heat_paralelo_openmp.cc -o main -lboost_iostreams -lboost_system -lboost_filesystem -fopenmp && ./main
+g++ -std=c++17 heat_paralelo_pthread.c -o main -lboost_iostreams -lboost_system -lboost_filesystem -fopenmp -pthread && ./main

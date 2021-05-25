@@ -131,7 +131,7 @@ while (loop)
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
   // mostrar_todos_historico(base_dir_save, fram);
-  demo_image(U);
+  // demo_image(U);
 }
 
 void *calc_mat(void *intervalo){

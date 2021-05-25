@@ -33,102 +33,82 @@ void demo_image(float original[dim][dim]);
 
 int main()
 {
-  int vec[dim];
+  float U[dim][dim];
+  float U_old[dim][dim];
   float DX = 0.1;
   float DY = 0.1;
-  int Nx = 5;
-  int Ny = 5;
-
-  float U[dim][dim];
-
-  int tamX = int(Nx / DX) + 1;
-  int tamY = int(Ny / DY) + 1;
-  float X[tamX];
-  float Y[tamY];
-  float sum = 0.0;
-  X[0] = 0.0;
-  Y[0] = 0.0;
-
-  for (int i = 0; i < dim; i++)
-  {
-    for (int j = 0; j < dim; j++)
-    {
-      U[i][j] = 0.0;
-    }
-  }
-
-  for (int j = 0; j < dim; j++)
-  {
-    U[0][j] = 100.0;
-  }
-
-  for (int i = 23; i < 29; i++)
-  {
-    for (int j = 23; j < 29; j++)
-    {
-      U[i][j] = 1000.0;
-    }
-  }
-
-  float maxValue = 0.0;
-  for (int i = 0; i < dim; i++)
-  {
-    for (int j = 0; j < dim; j++)
-    {
-      if (U[i][j] > maxValue)
-      {
-        maxValue = U[i][j];
-      }
-    }
-  }
-
-  for (int i = 1; i < tamX; i++)
-  {
-    sum += DX;
-    X[i] = sum;
-  }
-
-  sum = 0.0;
-  for (int i = 1; i < tamY; i++)
-  {
-    sum = sum + DY;
-    Y[i] = sum;
-  }
 
   int alpha = 5;
   float DT = pow(DX, 2) / float(2.0 * alpha);
   int M = 2000;
-
-  // finite difference scheme
   int fram = 0;
   int Ncount = 0;
   int loop = 1;
   float ERR = 0.0;
   bool save_breakpoint = true;
   char base_dir_save[] = "./save/heatmap_save_";
-
-  float U_old[dim][dim];
-
   float residuo = 0.0;
+  struct Compare { float val; };    
+  #pragma omp declare reduction(maximum : struct Compare : omp_out = omp_in.val > omp_out.val ? omp_in : omp_out)
 
-start = omp_get_wtime();
-while (loop)
-{
-  copiar(U_old, U);
-  ERR = 0.0;
-  #pragma omp parallel shared(U, U_old, residuo, ERR)
+  struct Compare max; 
+  max.val = 0; 
+  float maxValue = 0.0;
+  start = omp_get_wtime();
+
+  #pragma omp parallel shared(U)
   {
-    #pragma omp for reduction(+: ERR) collapse(2)
-    for (int i = 1; i < dim - 1; i++)
+    #pragma omp for collapse(2) nowait
+      for (int i = 0; i < dim; i++)
+        for (int j = 0; j < dim; j++)
+          U[i][j] = 0.0;
+
+    #pragma omp for nowait
+    for (int j = 0; j < dim; j++)
     {
-      for (int j = 1; j < dim - 1; j++)
+      U[0][j] = 100.0;
+    }
+
+    #pragma omp for collapse(2) nowait
+    for (int i = 23; i < 29; i++)
+    {
+      for (int j = 23; j < 29; j++)
       {
-        residuo = (DT * ((U_old[i + 1][j] - 2.0 * U_old[i][j] + U_old[i - 1][j]) / pow(DX, 2) + (U_old[i][j + 1] - 2.0 * U_old[i][j] + U_old[i][j - 1]) / pow(DY, 2)) + U_old[i][j]) - U[i][j];
-        U[i][j] = U[i][j] + residuo;
-        ERR = ERR + fabs(residuo);
+        U[i][j] = 1000.0;
       }
     }
+
+    #pragma omp for reduction(maximum:max) collapse(2)
+      for (int i = 0; i < dim; i++)
+      {
+        for (int j = 0; j < dim; j++)
+        {
+          if (U[i][j] > max.val)
+          {
+            max.val = U[i][j];
+          }
+        }
+      }
   }
+  maxValue = max.val;
+
+  while (loop)
+  {
+    copiar(U_old, U);
+    ERR = 0.0;
+    #pragma omp parallel shared(U, U_old, residuo, ERR)
+    {
+      #pragma omp for reduction(+: ERR) collapse(2)
+      for (int i = 1; i < dim - 1; i++)
+      {
+        for (int j = 1; j < dim - 1; j++)
+        {
+          residuo = (DT * ((U_old[i + 1][j] - 2.0 * U_old[i][j] + U_old[i - 1][j]) / pow(DX, 2) + (U_old[i][j + 1] - 2.0 * U_old[i][j] + U_old[i][j - 1]) / pow(DY, 2)) + U_old[i][j]) - U[i][j];
+          U[i][j] = U[i][j] + residuo;
+          ERR = ERR + fabs(residuo);
+        }
+      }
+    }
 
     // salvar visualizacao
     if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
@@ -157,7 +137,7 @@ while (loop)
   }
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
-  mostrar_todos_historico(base_dir_save, fram);
+  // mostrar_todos_historico(base_dir_save, fram);
   // mostrar_historico("./save/heatmap_save_1.txt");
   // demo_image(U);
 }
