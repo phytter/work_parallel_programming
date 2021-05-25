@@ -33,14 +33,28 @@ void pause_if_needed();
 
 void demo_image(float original[dim][dim]);
 
+void operacao_maxvalue_matriz(void);
+
+void* insert_matriz(void *intervalo);
+
 typedef struct 
 {
     long long inicio;
     long long fim;
 } Intervalo;
 
+typedef struct 
+{
+  long long value;
+} MaxValue;
+
 void operacao();
+
 void *calc_mat(void *intervalo);
+
+void operacao_insert_matriz(void);
+
+void* maxvalue_matriz(void *intervalo);
 
 float U[dim][dim];
 float U_old[dim][dim];
@@ -50,53 +64,54 @@ float DY = 0.1;
 int alpha = 5;
 float DT = pow(DX, 2) / float(2.0 * alpha);
 pthread_mutex_t mutexerror;
+MaxValue maxvalue[NUM_THREADS];
 
 int main()
 {
-
-  for (int i = 0; i < dim; i++)
-  {
-    for (int j = 0; j < dim; j++)
-    {
-      U[i][j] = 0.0;
-    }
-  }
-
-  for (int j = 0; j < dim; j++)
-  {
-    U[0][j] = 100.0;
-  }
-
-  for (int i = 23; i < 29; i++)
-  {
-    for (int j = 23; j < 29; j++)
-    {
-      U[i][j] = 1000.0;
-    }
-  }
-
-  float maxValue = 0.0;
-  for (int i = 0; i < dim; i++)
-  {
-    for (int j = 0; j < dim; j++)
-    {
-      if (U[i][j] > maxValue)
-      {
-        maxValue = U[i][j];
-      }
-    }
-  }
-
-  int M = 2000;
-
-  // finite difference scheme
   int fram = 0;
   int Ncount = 0;
   int loop = 1;
   bool save_breakpoint = false;
   char base_dir_save[] = "./save/heatmap_save_";
+  int M = 2000;
+
+  // for (int i = 0; i < dim; i++)
+  // {
+  //   for (int j = 0; j < dim; j++)
+  //   {
+  //     U[i][j] = 0.0;
+  //   }
+  // }
 
 start = omp_get_wtime();
+
+operacao_insert_matriz();
+
+for (int j = 0; j < dim; j++)
+{
+  U[0][j] = 100.0;
+}
+
+for (int i = 23; i < 29; i++)
+{
+  for (int j = 23; j < 29; j++)
+  {
+    U[i][j] = 1000.0;
+  }
+}
+
+float maxValue = 0.0;
+for (int i = 0; i < dim; i++)
+{
+  for (int j = 0; j < dim; j++)
+  {
+    if (U[i][j] > maxValue)
+    {
+      maxValue = U[i][j];
+    }
+  }
+}
+
 while (loop)
 {
   copiar(U_old, U);
@@ -132,6 +147,68 @@ while (loop)
   printf("Levou %lf segundos\n", end_point-start);
   // mostrar_todos_historico(base_dir_save, fram);
   // demo_image(U);
+}
+
+void* insert_matriz(void *intervalo){
+  Intervalo *args = ( Intervalo *)intervalo;
+  for (long long x = args->inicio; x < args->fim; x++){
+    for (long long y = 0; y < dim; y++){
+      U[x][y] = 0.0;
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void* maxvalue_matriz(void *intervalo){
+  Intervalo *args = ( Intervalo *)intervalo;
+  for (long long x = args->inicio; x < args->fim; x++){
+    for (long long y = 0; y < dim; y++){
+      U[x][y] = 0.0;
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void operacao_maxvalue_matriz(void){
+  pthread_t thread[NUM_THREADS];
+  Intervalo intervalo[NUM_THREADS];
+  Intervalo intervalo[NUM_THREADS];
+  long long peace_col = dim / NUM_THREADS;
+  for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
+    long long pos_vector = n_thread * peace_col;
+    long long pos_right = pos_vector + peace_col;
+    if (n_thread + 1 == NUM_THREADS) {
+      pos_right = dim;
+    }
+    intervalo[n_thread].inicio = pos_vector;
+    intervalo[n_thread].fim = pos_right;
+
+    pthread_create(&thread[n_thread], NULL, insert_matriz, &intervalo[n_thread]);
+  }
+  for(int i=0; i<NUM_THREADS; i++) {
+    pthread_join(thread[i], NULL);
+  }
+}
+
+void operacao_insert_matriz(void){
+  pthread_t thread[NUM_THREADS];
+  Intervalo intervalo[NUM_THREADS];
+  
+  long long peace_col = dim / NUM_THREADS;
+  for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
+    long long pos_vector = n_thread * peace_col;
+    long long pos_right = pos_vector + peace_col;
+    if (n_thread + 1 == NUM_THREADS) {
+      pos_right = dim;
+    }
+    intervalo[n_thread].inicio = pos_vector;
+    intervalo[n_thread].fim = pos_right;
+
+    pthread_create(&thread[n_thread], NULL, insert_matriz, &intervalo[n_thread]);
+  }
+  for(int i=0; i<NUM_THREADS; i++) {
+    pthread_join(thread[i], NULL);
+  }
 }
 
 void *calc_mat(void *intervalo){
