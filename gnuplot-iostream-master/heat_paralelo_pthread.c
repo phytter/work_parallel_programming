@@ -10,10 +10,12 @@
 #include <cstdio>
 #include <string.h>
 
+using namespace std;
 // Warn about use of deprecated functions.
 #define GNUPLOT_DEPRECATE_WARN
 #include "gnuplot-iostream.h"
 #define dim 51
+#define NUM_THREADS	4
 
 double start, end_point;
 
@@ -31,23 +33,26 @@ void pause_if_needed();
 
 void demo_image(float original[dim][dim]);
 
+typedef struct 
+{
+    long long inicio;
+    long long fim;
+} Intervalo;
+
+void operacao();
+void *calc_mat(void *intervalo);
+
+float U[dim][dim];
+float U_old[dim][dim];
+float ERR = 0.0;
+float DX = 0.1;
+float DY = 0.1;
+int alpha = 5;
+float DT = pow(DX, 2) / float(2.0 * alpha);
+pthread_mutex_t mutexerror;
+
 int main()
 {
-  int vec[dim];
-  float DX = 0.1;
-  float DY = 0.1;
-  int Nx = 5;
-  int Ny = 5;
-
-  float U[dim][dim];
-
-  int tamX = int(Nx / DX) + 1;
-  int tamY = int(Ny / DY) + 1;
-  float X[tamX];
-  float Y[tamY];
-  float sum = 0.0;
-  X[0] = 0.0;
-  Y[0] = 0.0;
 
   for (int i = 0; i < dim; i++)
   {
@@ -82,53 +87,21 @@ int main()
     }
   }
 
-  for (int i = 1; i < tamX; i++)
-  {
-    sum += DX;
-    X[i] = sum;
-  }
-
-  sum = 0.0;
-  for (int i = 1; i < tamY; i++)
-  {
-    sum = sum + DY;
-    Y[i] = sum;
-  }
-
-  int alpha = 5;
-  float DT = pow(DX, 2) / float(2.0 * alpha);
   int M = 2000;
 
   // finite difference scheme
   int fram = 0;
   int Ncount = 0;
   int loop = 1;
-  float ERR = 0.0;
-  bool save_breakpoint = true;
+  bool save_breakpoint = false;
   char base_dir_save[] = "./save/heatmap_save_";
-
-  float U_old[dim][dim];
-
-  float residuo = 0.0;
 
 start = omp_get_wtime();
 while (loop)
 {
   copiar(U_old, U);
   ERR = 0.0;
-  #pragma omp parallel shared(U, U_old, residuo, ERR)
-  {
-    #pragma omp for reduction(+: ERR) collapse(2)
-    for (int i = 1; i < dim - 1; i++)
-    {
-      for (int j = 1; j < dim - 1; j++)
-      {
-        residuo = (DT * ((U_old[i + 1][j] - 2.0 * U_old[i][j] + U_old[i - 1][j]) / pow(DX, 2) + (U_old[i][j + 1] - 2.0 * U_old[i][j] + U_old[i][j - 1]) / pow(DY, 2)) + U_old[i][j]) - U[i][j];
-        U[i][j] = U[i][j] + residuo;
-        ERR = ERR + fabs(residuo);
-      }
-    }
-  }
+  operacao();
 
     // salvar visualizacao
     if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
@@ -157,9 +130,43 @@ while (loop)
   }
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
-  mostrar_todos_historico(base_dir_save, fram);
-  // mostrar_historico("./save/heatmap_save_1.txt");
-  // demo_image(U);
+  // mostrar_todos_historico(base_dir_save, fram);
+  demo_image(U);
+}
+
+void *calc_mat(void *intervalo){
+  Intervalo *args = ( Intervalo *)intervalo;
+  float residuo = 0.0;
+  for (long long i = args->inicio; i < args->fim; i++){
+    for (long long j = 1; j < dim - 1; j++){
+      residuo = (DT * ((U_old[i + 1][j] - 2.0 * U_old[i][j] + U_old[i - 1][j]) / pow(DX, 2) + (U_old[i][j + 1] - 2.0 * U_old[i][j] + U_old[i][j - 1]) / pow(DY, 2)) + U_old[i][j]) - U[i][j];
+        U[i][j] = U[i][j] + residuo;
+        pthread_mutex_lock (&mutexerror);
+        ERR = ERR + fabs(residuo);
+        pthread_mutex_unlock (&mutexerror);
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void operacao(){
+  pthread_t thread[NUM_THREADS];
+  Intervalo intervalo[NUM_THREADS];
+  long long peace_col = (dim - 1) / NUM_THREADS;
+  for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
+    long long pos_vector = n_thread * peace_col + 1;
+    long long pos_right = pos_vector + peace_col;
+    if (n_thread + 1 == NUM_THREADS) {
+      pos_right = dim;
+    }
+    intervalo[n_thread].inicio = pos_vector;
+    intervalo[n_thread].fim = pos_right;
+
+    pthread_create(&thread[n_thread], NULL, calc_mat, &intervalo[n_thread]);
+  }
+  for(int i=0; i<NUM_THREADS; i++) {
+    pthread_join(thread[i], NULL);
+  }
 }
 
 void mostrar_todos_historico(char dir_base[], int n)

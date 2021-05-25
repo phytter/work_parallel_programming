@@ -1,0 +1,11 @@
+
+
+
+VETOR
+ Tempo serial: 0.000945 s
+ Tempo paralelo 4 thread: 0.000678 s
+
+
+MATRIZ
+ Tempo sereal: 0.031 s
+ Tempo paralelo 4 thread: 0.016 s
