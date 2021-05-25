@@ -21,10 +21,10 @@ int main()
   }
 
   start = omp_get_wtime();
-#pragma omp parallel num_threads(4)
+#pragma omp parallel num_threads(16)
 {
 
-  #pragma omp for schedule(dynamic, 4) collapse(2)
+  #pragma omp for schedule(static) collapse(2)
     for(i = 0; i < TAM; i++) {
       for(j = 0; j < TAM; j++) {
         matrizC[i][j] = 0;
