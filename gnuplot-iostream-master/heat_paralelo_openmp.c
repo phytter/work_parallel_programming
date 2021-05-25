@@ -13,17 +13,17 @@
 // Warn about use of deprecated functions.
 #define GNUPLOT_DEPRECATE_WARN
 #include "gnuplot-iostream.h"
-#define dim 51
+#define dim 100
 
 double start, end_point;
 
-void mostrar_todos_historico(char dir_base[], int n);
+void show_all_history(char dir_base[], int n);
 
-void mostrar_historico(char dir[]);
+void show_history(char dir[]);
 
-void salvar_matriz(char dir[], float U[dim][dim]);
+void save_matriz(char dir[], float U[dim][dim]);
 
-void copiar(float copiado[dim][dim], float original[dim][dim]);
+void copy_matriz(float copiado[dim][dim], float original[dim][dim]);
 
 void show_matriz(float original[dim][dim]);
 
@@ -40,12 +40,12 @@ int main()
 
   int alpha = 5;
   float DT = pow(DX, 2) / float(2.0 * alpha);
-  int M = 2000;
+  int M = 5000;
   int fram = 0;
   int Ncount = 0;
   int loop = 1;
   float ERR = 0.0;
-  bool save_breakpoint = true;
+  bool save_breakpoint = false;
   char base_dir_save[] = "./save/heatmap_save_";
   float residuo = 0.0;
   struct Compare { float val; };    
@@ -54,9 +54,12 @@ int main()
   struct Compare max; 
   max.val = 0; 
   float maxValue = 0.0;
+
+  int num_t = 4;
+
   start = omp_get_wtime();
 
-  #pragma omp parallel shared(U)
+  #pragma omp parallel num_threads(num_t) shared(U)
   {
     #pragma omp for collapse(2) nowait
       for (int i = 0; i < dim; i++)
@@ -94,9 +97,9 @@ int main()
 
   while (loop)
   {
-    copiar(U_old, U);
+    copy_matriz(U_old, U);
     ERR = 0.0;
-    #pragma omp parallel shared(U, U_old, residuo, ERR)
+    #pragma omp parallel num_threads(num_t) shared(U, U_old, residuo, ERR)
     {
       #pragma omp for reduction(+: ERR) collapse(2)
       for (int i = 1; i < dim - 1; i++)
@@ -110,39 +113,38 @@ int main()
       }
     }
 
-    // salvar visualizacao
-    if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
+    if (ERR >= 0.01 * maxValue) // Permite o limite do erro ate 1% do valor maximo
     {
       Ncount = Ncount + 1;
       if (Ncount % 50 == 0 && save_breakpoint)
-      { // displays movie frame every 50 time steps
+      {
         fram = fram + 1;
         char dir[50];
         sprintf(dir, "%s%d.txt", base_dir_save, fram);
-        salvar_matriz(dir, U);
+        save_matriz(dir, U);
       }
 
       if (Ncount > M)
       {
         loop = 0;
-        printf("solution do not reach steady state in %d time steps\n", M);
+        printf("Solução não alcançou o estado em %d passos\n", M);
         printf(" %.2f error\n", ERR);
       }
     }
     else
     {
       loop = 0;
-      printf("solution reach steady state in %d time steps\n", Ncount);
+      printf("Solução alcançou o estado em %d passos\n", Ncount);
     }
   }
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
-  // mostrar_todos_historico(base_dir_save, fram);
-  // mostrar_historico("./save/heatmap_save_1.txt");
-  // demo_image(U);
+  // show_all_history(base_dir_save, fram);
+  // show_history("./save/heatmap_save_1.txt");
+  demo_image(U);
 }
 
-void mostrar_todos_historico(char dir_base[], int n)
+void show_all_history(char dir_base[], int n)
 {
   for (int i; i < n; i++)
   {
@@ -151,11 +153,11 @@ void mostrar_todos_historico(char dir_base[], int n)
       size_str += 1;
     char n_dir[size_str];
     sprintf(n_dir, "%s%d.txt", dir_base, i);
-    mostrar_historico(n_dir);
+    show_history(n_dir);
   }
 }
 
-void mostrar_historico(char dir[])
+void show_history(char dir[])
 {
   FILE *fp;
   float U[dim][dim];
@@ -171,7 +173,7 @@ void mostrar_historico(char dir[])
   demo_image(U);
 }
 
-void salvar_matriz(char dir[], float U[dim][dim])
+void save_matriz(char dir[], float U[dim][dim])
 {
   FILE *fp;
   fp = fopen(dir, "w");
@@ -187,7 +189,7 @@ void salvar_matriz(char dir[], float U[dim][dim])
   fclose(fp);
 }
 
-void copiar(float copiado[dim][dim], float original[dim][dim])
+void copy_matriz(float copiado[dim][dim], float original[dim][dim])
 {
   int count;
 
@@ -210,8 +212,6 @@ void show_matriz(float original[dim][dim])
 void pause_if_needed()
 {
 #ifdef _WIN32
-  // For Windows, prompt for a keystroke before the Gnuplot object goes out of scope so that
-  // the gnuplot window doesn't get closed.
   std::cout << "Press enter to exit." << std::endl;
   std::cin.get();
 #endif
@@ -219,9 +219,6 @@ void pause_if_needed()
 
 void demo_image(float original[dim][dim])
 {
-  // Example of plotting an image.  Of course you are free (and encouraged) to
-  // use Blitz or Armadillo rather than std::vector in these situations.
-
   Gnuplot gp;
 
   std::vector<std::vector<double>> image;
@@ -230,30 +227,11 @@ void demo_image(float original[dim][dim])
     std::vector<double> row;
     for (int i = 0; i < dim; i++)
     {
-      // double x = (i - 50.0) / 5.0;
-      // double y = (j - 50.0) / 5.0;
-      // double z = std::cos(sqrt(x * x + y * y));
       row.push_back(original[j][i]);
     }
     image.push_back(row);
   }
 
-  // It may seem counterintuitive that send1d should be used rather than
-  // send2d.  The explanation is as follows.  The "send2d" method puts each
-  // value on its own line, with blank lines between rows.  This is what is
-  // expected by the splot command.  The two "dimensions" here are the lines
-  // and the blank-line-delimited blocks.  The "send1d" method doesn't group
-  // things into blocks.  So the elements of each row are printed as columns,
-  // as expected by Gnuplot's "matrix with image" command.  But images
-  // typically have lots of pixels, so sending as text is not the most
-  // efficient (although, it's not really that bad in the case of this
-  // example).  See the binary version below.
-  //
-  //gp << "plot '-' matrix with image\n";
-  //gp.send1d(image);
-
-  // To be honest, Gnuplot's documentation for "binary" and for "image" are
-  // both unclear to me.  The following example comes by trial-and-error.
   gp << "plot '-' binary" << gp.binFmt2d(image, "array") << "with image\n";
   gp.sendBinary2d(image);
 

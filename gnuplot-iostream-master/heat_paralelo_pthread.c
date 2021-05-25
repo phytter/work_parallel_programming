@@ -9,23 +9,23 @@
 #include <cmath>
 #include <cstdio>
 #include <string.h>
+#include "gnuplot-iostream.h"
 
 using namespace std;
 // Warn about use of deprecated functions.
 #define GNUPLOT_DEPRECATE_WARN
-#include "gnuplot-iostream.h"
-#define dim 51
+#define dim 100
 #define NUM_THREADS	4
 
 double start, end_point;
 
-void mostrar_todos_historico(char dir_base[], int n);
+void show_all_history(char dir_base[], int n);
 
-void mostrar_historico(char dir[]);
+void show_history(char dir[]);
 
-void salvar_matriz(char dir[], float U[dim][dim]);
+void save_matriz(char dir[], float U[dim][dim]);
 
-void copiar(float copiado[dim][dim], float original[dim][dim]);
+void copy_matriz(float copied[dim][dim], float original[dim][dim]);
 
 void show_matriz(float original[dim][dim]);
 
@@ -33,28 +33,32 @@ void pause_if_needed();
 
 void demo_image(float original[dim][dim]);
 
-void operacao_maxvalue_matriz(void);
+float operation_maxvalue_matriz(void);
 
-void* insert_matriz(void *intervalo);
+void* insert_matriz(void *interval);
 
 typedef struct 
 {
     long long inicio;
     long long fim;
-} Intervalo;
+} Interval;
 
-typedef struct 
+struct ThreadParameters
 {
-  long long value;
-} MaxValue;
+    float** matriz;
+    int start;
+    int end;
 
-void operacao();
+    float largest;
+};
 
-void *calc_mat(void *intervalo);
+void operation();
 
-void operacao_insert_matriz(void);
+void *calc_mat(void *interval);
 
-void* maxvalue_matriz(void *intervalo);
+void operation_insert_matriz(void);
+
+void* find_max(void* args);
 
 float U[dim][dim];
 float U_old[dim][dim];
@@ -64,7 +68,6 @@ float DY = 0.1;
 int alpha = 5;
 float DT = pow(DX, 2) / float(2.0 * alpha);
 pthread_mutex_t mutexerror;
-MaxValue maxvalue[NUM_THREADS];
 
 int main()
 {
@@ -73,19 +76,11 @@ int main()
   int loop = 1;
   bool save_breakpoint = false;
   char base_dir_save[] = "./save/heatmap_save_";
-  int M = 2000;
-
-  // for (int i = 0; i < dim; i++)
-  // {
-  //   for (int j = 0; j < dim; j++)
-  //   {
-  //     U[i][j] = 0.0;
-  //   }
-  // }
+  int M = 5000;
 
 start = omp_get_wtime();
 
-operacao_insert_matriz();
+operation_insert_matriz();
 
 for (int j = 0; j < dim; j++)
 {
@@ -100,23 +95,13 @@ for (int i = 23; i < 29; i++)
   }
 }
 
-float maxValue = 0.0;
-for (int i = 0; i < dim; i++)
-{
-  for (int j = 0; j < dim; j++)
-  {
-    if (U[i][j] > maxValue)
-    {
-      maxValue = U[i][j];
-    }
-  }
-}
+float maxValue = operation_maxvalue_matriz();
 
 while (loop)
 {
-  copiar(U_old, U);
+  copy_matriz(U_old, U);
   ERR = 0.0;
-  operacao();
+  operation();
 
     // salvar visualizacao
     if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
@@ -127,30 +112,30 @@ while (loop)
         fram = fram + 1;
         char dir[50];
         sprintf(dir, "%s%d.txt", base_dir_save, fram);
-        salvar_matriz(dir, U);
+        save_matriz(dir, U);
       }
 
       if (Ncount > M)
       {
         loop = 0;
-        printf("solution do not reach steady state in %d time steps\n", M);
+        printf("Solução não alcançou o estado em %d passos\n", M);
         printf(" %.2f error\n", ERR);
       }
     }
     else
     {
       loop = 0;
-      printf("solution reach steady state in %d time steps\n", Ncount);
+      printf("Solução alcançou o estado em %d passos\n", Ncount);
     }
   }
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
-  // mostrar_todos_historico(base_dir_save, fram);
-  // demo_image(U);
+  // show_all_history(base_dir_save, fram);
+  demo_image(U);
 }
 
-void* insert_matriz(void *intervalo){
-  Intervalo *args = ( Intervalo *)intervalo;
+void* insert_matriz(void *interval){
+  Interval *args = ( Interval *)interval;
   for (long long x = args->inicio; x < args->fim; x++){
     for (long long y = 0; y < dim; y++){
       U[x][y] = 0.0;
@@ -159,60 +144,83 @@ void* insert_matriz(void *intervalo){
   pthread_exit(NULL);
 }
 
-void* maxvalue_matriz(void *intervalo){
-  Intervalo *args = ( Intervalo *)intervalo;
-  for (long long x = args->inicio; x < args->fim; x++){
-    for (long long y = 0; y < dim; y++){
-      U[x][y] = 0.0;
+void* find_max(void* args)
+{
+    struct ThreadParameters* params = (struct ThreadParameters*)args;
+    int start = params->start;
+    int end = params->end;
+    int largest = 0;
+
+    for (int i = start; i < end; i++)
+    {
+      for (int j = 0; j < dim; j++)
+        if (U[i][j] > largest)
+        {
+            largest = U[i][j];
+        }
     }
-  }
-  pthread_exit(NULL);
+
+    // write the result back to the parameter structure
+    params->largest = largest;
+
+    return NULL;
 }
 
-void operacao_maxvalue_matriz(void){
-  pthread_t thread[NUM_THREADS];
-  Intervalo intervalo[NUM_THREADS];
-  Intervalo intervalo[NUM_THREADS];
-  long long peace_col = dim / NUM_THREADS;
-  for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
-    long long pos_vector = n_thread * peace_col;
-    long long pos_right = pos_vector + peace_col;
-    if (n_thread + 1 == NUM_THREADS) {
-      pos_right = dim;
-    }
-    intervalo[n_thread].inicio = pos_vector;
-    intervalo[n_thread].fim = pos_right;
+float operation_maxvalue_matriz(void){
+    float largest;
 
-    pthread_create(&thread[n_thread], NULL, insert_matriz, &intervalo[n_thread]);
-  }
-  for(int i=0; i<NUM_THREADS; i++) {
-    pthread_join(thread[i], NULL);
-  }
+    pthread_t threads[NUM_THREADS] = {0};
+    struct ThreadParameters thread_parameters[NUM_THREADS]  = {0};
+
+    largest = 0;
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        thread_parameters[i].start = i * (dim / NUM_THREADS);
+        thread_parameters[i].end = (i+1) * (dim / NUM_THREADS);
+        thread_parameters[i].largest = 0;
+        if (i == NUM_THREADS-1)
+          thread_parameters[i].end = dim;
+        pthread_create(&threads[i], NULL, find_max, &thread_parameters[i]);
+    }
+
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+ 
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+      if (thread_parameters[i].largest > largest)
+      {
+          largest = thread_parameters[i].largest;
+      }
+    }
+
+  return largest;
 }
 
-void operacao_insert_matriz(void){
+void operation_insert_matriz(void){
   pthread_t thread[NUM_THREADS];
-  Intervalo intervalo[NUM_THREADS];
+  Interval interval[NUM_THREADS];
   
   long long peace_col = dim / NUM_THREADS;
   for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
-    long long pos_vector = n_thread * peace_col;
-    long long pos_right = pos_vector + peace_col;
-    if (n_thread + 1 == NUM_THREADS) {
-      pos_right = dim;
-    }
-    intervalo[n_thread].inicio = pos_vector;
-    intervalo[n_thread].fim = pos_right;
+    interval[n_thread].inicio = n_thread * peace_col;
+    interval[n_thread].fim = (n_thread + 1) * peace_col;
 
-    pthread_create(&thread[n_thread], NULL, insert_matriz, &intervalo[n_thread]);
+    if (n_thread == NUM_THREADS-1)
+      interval[n_thread].fim = dim;
+
+    pthread_create(&thread[n_thread], NULL, insert_matriz, &interval[n_thread]);
   }
   for(int i=0; i<NUM_THREADS; i++) {
     pthread_join(thread[i], NULL);
   }
 }
 
-void *calc_mat(void *intervalo){
-  Intervalo *args = ( Intervalo *)intervalo;
+void *calc_mat(void *interval){
+  Interval *args = ( Interval *)interval;
   float residuo = 0.0;
   for (long long i = args->inicio; i < args->fim; i++){
     for (long long j = 1; j < dim - 1; j++){
@@ -226,27 +234,25 @@ void *calc_mat(void *intervalo){
   pthread_exit(NULL);
 }
 
-void operacao(){
+void operation(){
   pthread_t thread[NUM_THREADS];
-  Intervalo intervalo[NUM_THREADS];
+  Interval interval[NUM_THREADS];
   long long peace_col = (dim - 1) / NUM_THREADS;
   for (int n_thread=0; n_thread < NUM_THREADS; n_thread++){
-    long long pos_vector = n_thread * peace_col + 1;
-    long long pos_right = pos_vector + peace_col;
-    if (n_thread + 1 == NUM_THREADS) {
-      pos_right = dim;
-    }
-    intervalo[n_thread].inicio = pos_vector;
-    intervalo[n_thread].fim = pos_right;
+    interval[n_thread].inicio = (n_thread * peace_col) + 1;
+    interval[n_thread].fim = (n_thread + 1) * peace_col + 1;
 
-    pthread_create(&thread[n_thread], NULL, calc_mat, &intervalo[n_thread]);
+    if (n_thread == NUM_THREADS-1)
+      interval[n_thread].fim = dim - 1;
+
+    pthread_create(&thread[n_thread], NULL, calc_mat, &interval[n_thread]);
   }
   for(int i=0; i<NUM_THREADS; i++) {
     pthread_join(thread[i], NULL);
   }
 }
 
-void mostrar_todos_historico(char dir_base[], int n)
+void show_all_history(char dir_base[], int n)
 {
   for (int i; i < n; i++)
   {
@@ -255,11 +261,11 @@ void mostrar_todos_historico(char dir_base[], int n)
       size_str += 1;
     char n_dir[size_str];
     sprintf(n_dir, "%s%d.txt", dir_base, i);
-    mostrar_historico(n_dir);
+    show_history(n_dir);
   }
 }
 
-void mostrar_historico(char dir[])
+void show_history(char dir[])
 {
   FILE *fp;
   float U[dim][dim];
@@ -275,7 +281,7 @@ void mostrar_historico(char dir[])
   demo_image(U);
 }
 
-void salvar_matriz(char dir[], float U[dim][dim])
+void save_matriz(char dir[], float U[dim][dim])
 {
   FILE *fp;
   fp = fopen(dir, "w");
@@ -291,13 +297,13 @@ void salvar_matriz(char dir[], float U[dim][dim])
   fclose(fp);
 }
 
-void copiar(float copiado[dim][dim], float original[dim][dim])
+void copy_matriz(float copied[dim][dim], float original[dim][dim])
 {
   int count;
 
   for (count = 0; count < dim; count++)
     for (int y = 0; y < dim; y++)
-      copiado[count][y] = original[count][y];
+      copied[count][y] = original[count][y];
 }
 
 void show_matriz(float original[dim][dim])
@@ -323,9 +329,6 @@ void pause_if_needed()
 
 void demo_image(float original[dim][dim])
 {
-  // Example of plotting an image.  Of course you are free (and encouraged) to
-  // use Blitz or Armadillo rather than std::vector in these situations.
-
   Gnuplot gp;
 
   std::vector<std::vector<double>> image;
@@ -334,30 +337,11 @@ void demo_image(float original[dim][dim])
     std::vector<double> row;
     for (int i = 0; i < dim; i++)
     {
-      // double x = (i - 50.0) / 5.0;
-      // double y = (j - 50.0) / 5.0;
-      // double z = std::cos(sqrt(x * x + y * y));
       row.push_back(original[j][i]);
     }
     image.push_back(row);
   }
 
-  // It may seem counterintuitive that send1d should be used rather than
-  // send2d.  The explanation is as follows.  The "send2d" method puts each
-  // value on its own line, with blank lines between rows.  This is what is
-  // expected by the splot command.  The two "dimensions" here are the lines
-  // and the blank-line-delimited blocks.  The "send1d" method doesn't group
-  // things into blocks.  So the elements of each row are printed as columns,
-  // as expected by Gnuplot's "matrix with image" command.  But images
-  // typically have lots of pixels, so sending as text is not the most
-  // efficient (although, it's not really that bad in the case of this
-  // example).  See the binary version below.
-  //
-  //gp << "plot '-' matrix with image\n";
-  //gp.send1d(image);
-
-  // To be honest, Gnuplot's documentation for "binary" and for "image" are
-  // both unclear to me.  The following example comes by trial-and-error.
   gp << "plot '-' binary" << gp.binFmt2d(image, "array") << "with image\n";
   gp.sendBinary2d(image);
 

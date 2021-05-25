@@ -13,17 +13,17 @@
 // Warn about use of deprecated functions.
 #define GNUPLOT_DEPRECATE_WARN
 #include "gnuplot-iostream.h"
-#define dim 51
+#define dim 100
 
 double start, end_point;
 
-void mostrar_todos_historico(char dir_base[], int n);
+void show_all_history(char dir_base[], int n);
 
-void mostrar_historico(char dir[]);
+void show_history(char dir[]);
 
-void salvar_matriz(char dir[], float U[dim][dim]);
+void save_matriz(char dir[], float U[dim][dim]);
 
-void copiar(float copiado[dim][dim], float original[dim][dim]);
+void copy_matriz(float copied[dim][dim], float original[dim][dim]);
 
 void show_matriz(float original[dim][dim]);
 
@@ -36,18 +36,10 @@ int main()
   int vec[dim];
   float DX = 0.1;
   float DY = 0.1;
-  int Nx = 5;
-  int Ny = 5;
 
   float U[dim][dim];
 
-  int tamX = int(Nx / DX) + 1;
-  int tamY = int(Ny / DY) + 1;
-  float X[tamX];
-  float Y[tamY];
-  float sum = 0.0;
-  X[0] = 0.0;
-  Y[0] = 0.0;
+  start = omp_get_wtime();
 
   for (int i = 0; i < dim; i++)
   {
@@ -82,22 +74,9 @@ int main()
     }
   }
 
-  for (int i = 1; i < tamX; i++)
-  {
-    sum += DX;
-    X[i] = sum;
-  }
-
-  sum = 0.0;
-  for (int i = 1; i < tamY; i++)
-  {
-    sum = sum + DY;
-    Y[i] = sum;
-  }
-
   int alpha = 5;
   float DT = pow(DX, 2) / float(2.0 * alpha);
-  int M = 2000;
+  int M = 5000;
 
   // finite difference scheme
   int fram = 0;
@@ -109,11 +88,10 @@ int main()
   float U_old[dim][dim];
 
   float residuo = 0.0;
-  start = omp_get_wtime();
 
   while (loop)
   {
-    copiar(U_old, U);
+    copy_matriz(U_old, U);
     ERR = 0.0;
     for (int i = 1; i < dim - 1; i++)
     {
@@ -134,7 +112,7 @@ int main()
         fram = fram + 1;
         char dir[50];
         // sprintf(dir, "%s%d.txt", base_dir_save, fram);
-        // salvar_matriz(dir, U);
+        // save_matriz(dir, U);
       }
       if (Ncount > M)
       {
@@ -151,16 +129,16 @@ int main()
   }
 
   // show_matriz(U_old);
-  // mostrar_todos_historico(base_dir_save, fram);
+  // show_all_history(base_dir_save, fram);
 
-  // mostrar_historico("./save/heatmap_save_5.txt");
+  // show_history("./save/heatmap_save_5.txt");
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
   demo_image(U);
 
 }
 
-void mostrar_todos_historico(char dir_base[], int n)
+void show_all_history(char dir_base[], int n)
 {
 
   for (int i; i < n; i++)
@@ -171,11 +149,11 @@ void mostrar_todos_historico(char dir_base[], int n)
     char n_dir[size_str];
     sprintf(n_dir, "%s%d.txt", dir_base, i);
     // printf("%s", n_dir);
-    mostrar_historico(n_dir);
+    show_history(n_dir);
   }
 }
 
-void mostrar_historico(char dir[])
+void show_history(char dir[])
 {
   FILE *fp;
   float U[dim][dim];
@@ -191,7 +169,7 @@ void mostrar_historico(char dir[])
   demo_image(U);
 }
 
-void salvar_matriz(char dir[], float U[dim][dim])
+void save_matriz(char dir[], float U[dim][dim])
 {
   FILE *fp;
   fp = fopen(dir, "w");
@@ -207,13 +185,13 @@ void salvar_matriz(char dir[], float U[dim][dim])
   fclose(fp);
 }
 
-void copiar(float copiado[dim][dim], float original[dim][dim])
+void copy_matriz(float copied[dim][dim], float original[dim][dim])
 {
   int count;
 
   for (count = 0; count < dim; count++)
     for (int y = 0; y < dim; y++)
-      copiado[count][y] = original[count][y];
+      copied[count][y] = original[count][y];
 }
 
 void show_matriz(float original[dim][dim])
@@ -230,8 +208,6 @@ void show_matriz(float original[dim][dim])
 void pause_if_needed()
 {
 #ifdef _WIN32
-  // For Windows, prompt for a keystroke before the Gnuplot object goes out of scope so that
-  // the gnuplot window doesn't get closed.
   std::cout << "Press enter to exit." << std::endl;
   std::cin.get();
 #endif
@@ -239,8 +215,6 @@ void pause_if_needed()
 
 void demo_image(float original[dim][dim])
 {
-  // Example of plotting an image.  Of course you are free (and encouraged) to
-  // use Blitz or Armadillo rather than std::vector in these situations.
 
   Gnuplot gp;
 
@@ -250,30 +224,11 @@ void demo_image(float original[dim][dim])
     std::vector<double> row;
     for (int i = 0; i < dim; i++)
     {
-      // double x = (i - 50.0) / 5.0;
-      // double y = (j - 50.0) / 5.0;
-      // double z = std::cos(sqrt(x * x + y * y));
       row.push_back(original[j][i]);
     }
     image.push_back(row);
   }
 
-  // It may seem counterintuitive that send1d should be used rather than
-  // send2d.  The explanation is as follows.  The "send2d" method puts each
-  // value on its own line, with blank lines between rows.  This is what is
-  // expected by the splot command.  The two "dimensions" here are the lines
-  // and the blank-line-delimited blocks.  The "send1d" method doesn't group
-  // things into blocks.  So the elements of each row are printed as columns,
-  // as expected by Gnuplot's "matrix with image" command.  But images
-  // typically have lots of pixels, so sending as text is not the most
-  // efficient (although, it's not really that bad in the case of this
-  // example).  See the binary version below.
-  //
-  //gp << "plot '-' matrix with image\n";
-  //gp.send1d(image);
-
-  // To be honest, Gnuplot's documentation for "binary" and for "image" are
-  // both unclear to me.  The following example comes by trial-and-error.
   gp << "plot '-' binary" << gp.binFmt2d(image, "array") << "with image\n";
   gp.sendBinary2d(image);
 
