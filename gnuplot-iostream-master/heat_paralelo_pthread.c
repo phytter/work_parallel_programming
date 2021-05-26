@@ -14,7 +14,7 @@
 using namespace std;
 // Warn about use of deprecated functions.
 #define GNUPLOT_DEPRECATE_WARN
-#define dim 100
+#define dim 51
 #define NUM_THREADS	4
 
 double start, end_point;
@@ -45,7 +45,6 @@ typedef struct
 
 struct ThreadParameters
 {
-    float** matriz;
     int start;
     int end;
 
@@ -103,31 +102,31 @@ while (loop)
   ERR = 0.0;
   operation();
 
-    // salvar visualizacao
-    if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
-    {
-      Ncount = Ncount + 1;
-      if (Ncount % 50 == 0 && save_breakpoint)
-      { // displays movie frame every 50 time steps
-        fram = fram + 1;
-        char dir[50];
-        sprintf(dir, "%s%d.txt", base_dir_save, fram);
-        save_matriz(dir, U);
-      }
-
-      if (Ncount > M)
-      {
-        loop = 0;
-        printf("Solução não alcançou o estado em %d passos\n", M);
-        printf(" %.2f error\n", ERR);
-      }
+  // salvar visualizacao
+  if (ERR >= 0.01 * maxValue) // allowed error limit is 1% of maximum temperature
+  {
+    Ncount = Ncount + 1;
+    if (Ncount % 50 == 0 && save_breakpoint)
+    { // displays movie frame every 50 time steps
+      fram = fram + 1;
+      char dir[50];
+      sprintf(dir, "%s%d.txt", base_dir_save, fram);
+      save_matriz(dir, U);
     }
-    else
+
+    if (Ncount > M)
     {
       loop = 0;
-      printf("Solução alcançou o estado em %d passos\n", Ncount);
+      printf("Solução não alcançou o estado em %d passos\n", M);
+      printf(" %.2f error\n", ERR);
     }
   }
+  else
+  {
+    loop = 0;
+    printf("Solução alcançou o estado em %d passos\n", Ncount);
+  }
+}
   end_point = omp_get_wtime();
   printf("Levou %lf segundos\n", end_point-start);
   // show_all_history(base_dir_save, fram);
@@ -225,10 +224,10 @@ void *calc_mat(void *interval){
   for (long long i = args->inicio; i < args->fim; i++){
     for (long long j = 1; j < dim - 1; j++){
       residuo = (DT * ((U_old[i + 1][j] - 2.0 * U_old[i][j] + U_old[i - 1][j]) / pow(DX, 2) + (U_old[i][j + 1] - 2.0 * U_old[i][j] + U_old[i][j - 1]) / pow(DY, 2)) + U_old[i][j]) - U[i][j];
-        U[i][j] = U[i][j] + residuo;
-        pthread_mutex_lock (&mutexerror);
-        ERR = ERR + fabs(residuo);
-        pthread_mutex_unlock (&mutexerror);
+      U[i][j] = U[i][j] + residuo;
+      pthread_mutex_lock (&mutexerror);
+      ERR = ERR + fabs(residuo);
+      pthread_mutex_unlock (&mutexerror);
     }
   }
   pthread_exit(NULL);

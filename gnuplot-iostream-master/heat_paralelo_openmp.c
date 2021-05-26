@@ -61,7 +61,7 @@ int main()
 
   #pragma omp parallel num_threads(num_t) shared(U)
   {
-    #pragma omp for collapse(2) nowait
+    #pragma omp for collapse(2)
       for (int i = 0; i < dim; i++)
         for (int j = 0; j < dim; j++)
           U[i][j] = 0.0;
@@ -72,7 +72,7 @@ int main()
       U[0][j] = 100.0;
     }
 
-    #pragma omp for collapse(2) nowait
+    #pragma omp for collapse(2)
     for (int i = 23; i < 29; i++)
     {
       for (int j = 23; j < 29; j++)
