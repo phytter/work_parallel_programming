@@ -66,7 +66,7 @@ int main()
         for (int j = 0; j < dim; j++)
           U[i][j] = 0.0;
 
-    #pragma omp for nowait
+    #pragma omp for
     for (int j = 0; j < dim; j++)
     {
       U[0][j] = 100.0;
